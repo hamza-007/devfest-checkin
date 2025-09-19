@@ -1,54 +1,26 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"fmt"
 
-	mail "devfest-checkin/utils/mail"
-	qr "devfest-checkin/utils/qr"
-
-	firestore "cloud.google.com/go/firestore"
 	godotenv "github.com/joho/godotenv"
-	option "google.golang.org/api/option"
 )
 
 func main() {
 
-	ctx := context.Background()
-	sa := option.WithCredentialsFile("serviceAccountKey.json")
-
-	client, err := firestore.NewClient(ctx, "devfest-ac5cd", sa)
-	if err != nil {
-		log.Fatalf("Failed to create client: %v", err)
-	}
-	defer client.Close()
-
 	if err := godotenv.Load("./.env"); err != nil {
-		fmt.Println("error loading env file", err)
+		fmt.Println("error loading env file" ,err)
 		return
 	}
 
-	collection := client.Collection("users")
-
-	// Add a document
-	doc, _, err := collection.Add(ctx, map[string]interface{}{
-		"name":  "Hamza",
-		"email": "hamza@example.com",
-		"age":   25,
-	})
-	if err != nil {
-		log.Fatalf("Failed adding document: %v", err)
-	}
-	fmt.Println("Added document with ID:", doc.ID)
-
-	return 
-
 	mux := http.NewServeMux()
 
+	handler := CheckHeader("X-API-ACCESS", os.Getenv("X_API_ACCESS"))(mux)
+	
 	// QR code endpoint
 	mux.HandleFunc("/qrcode", func(w http.ResponseWriter, r *http.Request) {
 		// Get "text" query parameter
@@ -67,26 +39,18 @@ func main() {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(resp)
 		} else {
-			http.Error(w, "invalid user", http.StatusBadRequest)
-			return
+			resp := SuccessResponse{
+				Status:  "failed",
+				Message: "User not found !",
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
 		}
 
 	})
 
-	handler := CheckHeader("X-API-ACCESS", os.Getenv("X_API_ACCESS"))(mux)
 
-	png, err := qr.GenerateQR("http://127.0.0.1:8023?user_id=123")
-	if err != nil {
-		return
-	}
-
-	sender := mail.New("hamzaabdellaoui26648999@gmail.com")
-	err = sender.SendMail(png)
-	if err != nil {
-		fmt.Println("error sending email", err)
-	}
-	fmt.Println("email sent ! ")
-	log.Fatal(http.ListenAndServe(":8023", handler))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
 
 func CheckHeader(headerName, expectedValue string) func(http.Handler) http.Handler {
